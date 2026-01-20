@@ -35,7 +35,7 @@ export default function Products() {
       <ul>
         {products.map((p) => (
           <li key={p.id} style={{ marginBottom: 6 }}>
-            <strong>{p.name}</strong> — {p.description || ""} — ${p.price}
+            <strong>{p.name}</strong> — {p.description || ""} — €{(p.price || 0).toFixed(2)}
             <div>
               <button onClick={async () => {
                 const token = localStorage.getItem("token");

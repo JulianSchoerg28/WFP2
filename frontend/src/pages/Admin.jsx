@@ -125,7 +125,7 @@ export default function Admin() {
         })()}
         <ul>
           {products.map(p => (
-            <li key={p.id}>{p.id} — {p.name} — ${p.price} <button onClick={()=>handleDelete(p.id)}>Delete</button></li>
+            <li key={p.id}>{p.id} — {p.name} — €{(p.price || 0).toFixed(2)} <button onClick={()=>handleDelete(p.id)}>Delete</button></li>
           ))}
         </ul>
       </section>

@@ -141,13 +141,13 @@ export default function Cart() {
       <ul>
         {cart.map((it, idx) => (
           <li key={idx}>
-            {it.name} — qty {it.quantity} — ${it.price}
+            {it.name} — qty {it.quantity} — €{(it.price || 0).toFixed(2)}
             <button onClick={() => removeItem(idx)} style={{ marginLeft: 8 }}>Remove</button>
           </li>
         ))}
       </ul>
       <div style={{ marginTop: 12 }}>
-        <strong>Total: ${total}</strong>
+        <strong>Total: €{total}</strong>
       </div>
       <div style={{ marginTop: 12 }}>
         <button onClick={placeOrder} disabled={loading || cart.length === 0}>{loading ? "Processing..." : "Place Order"}</button>

@@ -6,6 +6,7 @@ export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const navigate = useNavigate();
 
   async function doRegister(e) {
@@ -14,6 +15,7 @@ export default function Login() {
     setError(null);
     try {
       await register(username, password);
+      setSuccess('Registrierung erfolgreich — du wirst jetzt eingeloggt.');
       // fallthrough to login
       const t0 = performance.now();
       const tokenResp = await login(username, password);
@@ -25,6 +27,7 @@ export default function Login() {
       navigate("/products", { replace: true });
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
+      setSuccess(null);
     }
   }
 
@@ -56,6 +59,7 @@ export default function Login() {
           <button onClick={doRegister} type="button">Register</button>
         </div>
         {error && <div style={{ color: "red" }}>{error}</div>}
+        {success && <div style={{ color: "green" }}>{success}</div>}
       </form>
     </div>
   );

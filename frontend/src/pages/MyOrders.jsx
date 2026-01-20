@@ -102,11 +102,11 @@ export default function MyOrders() {
           <ul style={{ marginTop: 8 }}>
             {o.parsedItems.map((it, idx) => (
               <li key={idx}>
-                {it.product.name} — qty {it.quantity} — ${((it.product.price||0) * it.quantity).toFixed(2)}
+                {it.product.name} — qty {it.quantity} — €{((it.product.price||0) * it.quantity).toFixed(2)}
               </li>
             ))}
           </ul>
-          <div style={{ marginTop: 8 }}><strong>Total: ${o.parsedItems.reduce((s,it)=>s + ((it.product.price||0) * it.quantity), 0).toFixed(2)}</strong></div>
+          <div style={{ marginTop: 8 }}><strong>Total: €{o.parsedItems.reduce((s,it)=>s + ((it.product.price||0) * it.quantity), 0).toFixed(2)}</strong></div>
           <div style={{ marginTop: 8 }}>
             {/* Friendly status labels */}
             {o.status === 'PAID' && <span style={{ color: 'green' }}>Paid</span>}
