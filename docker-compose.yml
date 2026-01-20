@@ -1,0 +1,178 @@
+
+name: likeyeahidk
+
+services:
+  product-service:
+    build: ./product-service
+    env_file: .env
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${PRODUCT_DB:-product_db}
+      - AUTH_TOKEN_URL=http://auth-service:8000/token
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SERVICE_NAME=product
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  auth-service:
+    build: ./auth-service
+    env_file: .env
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${AUTH_DB:-auth_db}
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SECRET_KEY=${SECRET_KEY:-dev_secret}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - SERVICE_NAME=auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  payment-service:
+    build: ./payment-service
+    restart: unless-stopped
+    expose:
+      - "8000"
+    depends_on:
+      - order-service
+    env_file: .env
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8000
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-some-internal-key}
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SERVICE_NAME=payment
+
+
+  order-service:
+    build: ./order-service
+    env_file: .env
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${ORDER_DB:-order_db}
+      - AUTH_TOKEN_URL=http://auth-service:8000/token
+      - SECRET_KEY=${SECRET_KEY:-replace_this_with_a_strong_secret}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-some-internal-key}
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SERVICE_NAME=order
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+
+  cart-service:
+    build: ./cart-service
+    env_file: .env
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${CART_DB:-cart_db}
+      - JWT_SECRET=${JWT_SECRET:-dev_secret}
+      - PRODUCT_SERVICE_URL=http://product-service:8000
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SERVICE_NAME=cart
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api-gateway:
+    build: ./gateway
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-replace_this_with_a_strong_secret}
+      - LOG_SERVICE_URL=http://log-service:8000
+      - SERVICE_NAME=gateway
+    restart: unless-stopped
+    depends_on:
+      - product-service
+      - auth-service
+      - order-service
+      - payment-service
+      - cart-service
+      - log-service
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+
+  order-consumer:
+    build: ./order-consumer
+    env_file: .env
+    depends_on:
+      - rabbitmq
+      - log-service
+      - order-service
+    environment:
+      - ORDER_SERVICE_URL=http://order-service:8000
+      - ORDER_CONSUMER_RETRY_ATTEMPTS=3
+      - ORDER_CONSUMER_BACKOFF_INITIAL=3.0
+      - ORDER_CONSUMER_BACKOFF_MULTIPLIER=2.0
+    restart: unless-stopped
+
+
+  log-service:
+    build: ./log-service
+    env_file: .env
+    environment:
+      - LOG_LEVEL=info
+      - LOG_DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/logs_db
+      - SERVICE_NAME=log
+    ports:
+      - "8006:8000"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    depends_on:
+      - api-gateway
+      - product-service
+      - auth-service
+      - order-service
+      - cart-service
+      - payment-service
+      - log-service
+
+  db:
+      image: postgres:15-alpine
+      volumes:
+        - postgres_data:/var/lib/postgresql/data/
+        - ./db-init:/docker-entrypoint-initdb.d
+      environment:
+        - POSTGRES_USER=${POSTGRES_USER}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        - POSTGRES_DB=${POSTGRES_DB}
+      ports:
+        - "5432:5432"
+      restart: unless-stopped
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+
+volumes:
+  postgres_data:

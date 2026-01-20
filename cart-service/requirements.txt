@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+sqlmodel
+psycopg2-binary
+python-jose[cryptography]
+PyJWT
+requests
+prometheus_client
