@@ -87,18 +87,35 @@ async def proxy(full_path: str, request: Request):
     #    `/auth/health` forward only `/health` to the upstream so services
     #    that expose `/health` at root are reached correctly.
     forward_path = full_path
-    if upstream and full_path.lower().startswith("auth/"):
+    # normalize path without leading slash for matching
+    path_no_slash = full_path.lstrip("/").lower()
+
+    # For auth routes we usually forward to the auth-service root. Rewrite
+    # a few known auth aliases so they target the auth-service root paths
+    # (e.g. `/auth/register` -> `/register`, `/auth/login` -> `/login`,
+    # and `auth/internal/...` -> `internal/...`).
+    if upstream and (path_no_slash.startswith("auth/internal/") or path_no_slash.startswith("auth/register") or path_no_slash.startswith("auth/login")):
         forward_path = full_path[len("auth/"):]
 
     # If the incoming path ends with /health or /metrics, forward just that
     # endpoint to the selected upstream so requests like `/products/health`
     # or `/products/metrics` succeed.
-    if full_path.lower().endswith("/health"):
+    if path_no_slash.endswith("/health"):
         forward_path = "health"
-    if full_path.lower().endswith("/metrics"):
+    if path_no_slash.endswith("/metrics"):
         forward_path = "metrics"
 
     url = f"{upstream}/{forward_path}"
+
+    # Debug: log the exact upstream URL for auth register attempts
+    try:
+        if full_path.lower().startswith("auth/register"):
+            try:
+                print(f"gateway -> upstream url: {url}")
+            except Exception:
+                logger.warning("gateway -> upstream url: %s", url)
+    except Exception:
+        pass
 
     headers = dict(request.headers)
     # remove host header to avoid upstream confusion
@@ -162,15 +179,46 @@ async def proxy(full_path: str, request: Request):
     except Exception:
         pass
 
+    from urllib.parse import urlparse
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
+            # Perform the initial request without automatic redirect
+            # following. If the upstream responds with an absolute
+            # Location header (internal hostname), follow that redirect
+            # explicitly from the gateway by rewriting it to the selected
+            # upstream so we avoid exposing internal hostnames to clients.
             resp = await client.request(
                 request.method,
                 url,
                 headers=headers,
                 params=request.query_params,
                 content=body,
+                follow_redirects=False,
             )
+                if resp.status_code in (301, 302, 307, 308) and "location" in resp.headers:
+                    try:
+                        loc = resp.headers.get("location")
+                        logger.warning("upstream responded with redirect: %s -> %s", url, loc)
+                        parsed = urlparse(loc)
+                        # build a follow URL that targets the same upstream
+                        follow_path = parsed.path or ""
+                        if parsed.query:
+                            follow_path = follow_path + "?" + parsed.query
+                        follow_url = f"{upstream}/{follow_path.lstrip('/')}"
+                        logger.warning("rewritten follow_url: %s", follow_url)
+                        follow_resp = await client.request(
+                            request.method,
+                            follow_url,
+                            headers=headers,
+                            params=request.query_params,
+                            content=body,
+                            follow_redirects=True,
+                        )
+                        logger.warning("followed redirect, status=%s, snippet=%s", follow_resp.status_code, (follow_resp.text or '')[:200])
+                        resp = follow_resp
+                    except Exception as e:
+                        logger.error("failed to follow upstream redirect for %s -> %s: %s", url, loc if 'loc' in locals() else None, e, exc_info=True)
         except httpx.RequestError as exc:
             try:
                 logger.error("Upstream request failed for %s -> %s: %s", url, full_path, exc, exc_info=True)

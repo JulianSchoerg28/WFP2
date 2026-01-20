@@ -12,7 +12,7 @@ export const authClient = axios.create({ baseURL: AUTH_URL });
 export const productClient = axios.create({ baseURL: PRODUCT_URL });
 
 export async function register(username, password) {
-  return authClient.post("/auth/register", { username, password });
+  return authClient.post("/auth/register/", { username, password });
 }
 
 export async function login(username, password) {

@@ -2,3 +2,4 @@
 frontend/node_modules/
 frontend/package-lock.json
 vorgaben.txt
+ops/prometheus_and_docker_commands.txt
