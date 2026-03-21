@@ -79,27 +79,13 @@ async def proxy(full_path: str, request: Request):
         except Exception:
             pass
         return JSONResponse(status_code=502, content={"error": "no upstream for path"})
-
-    # Normal forwarding path. We make two small adjustments:
-    # 1) If the request is for an internal/auth endpoint like
-    #    `/auth/internal/...` forward to `/internal/...` on the auth-service.
-    # 2) If the request is a health check like `/products/health` or
-    #    `/auth/health` forward only `/health` to the upstream so services
-    #    that expose `/health` at root are reached correctly.
+    
     forward_path = full_path
-    # normalize path without leading slash for matching
     path_no_slash = full_path.lstrip("/").lower()
 
-    # For auth routes we usually forward to the auth-service root. Rewrite
-    # a few known auth aliases so they target the auth-service root paths
-    # (e.g. `/auth/register` -> `/register`, `/auth/login` -> `/login`,
-    # and `auth/internal/...` -> `internal/...`).
     if upstream and (path_no_slash.startswith("auth/internal/") or path_no_slash.startswith("auth/register") or path_no_slash.startswith("auth/login")):
         forward_path = full_path[len("auth/"):]
 
-    # If the incoming path ends with /health or /metrics, forward just that
-    # endpoint to the selected upstream so requests like `/products/health`
-    # or `/products/metrics` succeed.
     if path_no_slash.endswith("/health"):
         forward_path = "health"
     if path_no_slash.endswith("/metrics"):
@@ -183,11 +169,7 @@ async def proxy(full_path: str, request: Request):
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            # Perform the initial request without automatic redirect
-            # following. If the upstream responds with an absolute
-            # Location header (internal hostname), follow that redirect
-            # explicitly from the gateway by rewriting it to the selected
-            # upstream so we avoid exposing internal hostnames to clients.
+            
             resp = await client.request(
                 request.method,
                 url,
