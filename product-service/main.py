@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import httpx
 import logging
+import socket
 import time
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi import Response as FastAPIResponse
@@ -79,6 +80,9 @@ class ProductUpdate(SQLModel):
     price: Optional[float] = None
 
 
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 engine = create_engine(DATABASE_URL, echo=True)
 
 
@@ -96,6 +100,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_app(app)
+
+# expose container instance id for testing load distribution
+INSTANCE_ID = os.getenv("INSTANCE_ID") or socket.gethostname()
+
+
+@app.middleware("http")
+async def add_instance_header(request: Request, call_next):
+    resp = await call_next(request)
+    try:
+        resp.headers["X-Instance"] = INSTANCE_ID
+    except Exception:
+        pass
+    return resp
 
 # Prometheus metrics (basic)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "product")

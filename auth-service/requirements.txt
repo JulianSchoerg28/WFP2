@@ -8,3 +8,9 @@ python-jose[cryptography]
 python-multipart
 httpx
 prometheus_client
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+opentelemetry-instrumentation-sqlalchemy

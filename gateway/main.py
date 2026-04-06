@@ -1,4 +1,7 @@
 import os
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 from datetime import datetime
 from typing import Optional
 
@@ -10,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from jose import jwt
 import logging
+import threading
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev_secret")
 ALGORITHMS = ["HS256"]
@@ -24,6 +28,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+instrument_app(app)
+
 logger = logging.getLogger("api-gateway")
 
 
@@ -36,20 +42,117 @@ def verify_jwt_token(token: str) -> Optional[dict]:
 
 
 def select_upstream(path: str) -> Optional[str]:
+    # Round-robin upstream pool selection.
+    # Upstreams can be configured via environment variables, comma-separated, e.g.
+    # PRODUCT_UPSTREAMS=http://product-a:8000,http://product-b:8000
     p = path.lstrip("/")
-    if p.startswith("products"):
-        return "http://product-service:8000"
-    if p.startswith("auth") or p == "token" or p.startswith("token"):
-        return "http://auth-service:8000"
-    if p.startswith("orders") or p.startswith("myorders"):
-        return "http://order-service:8000"
-    if p.startswith("payment"):
-        return "http://payment-service:8000"
-    if p.startswith("cart"):
-        return "http://cart-service:8000"
-    if p.startswith("logs") or p.startswith("events") or p.startswith("log"):
-        return "http://log-service:8000"
+
+    # define mapping of path prefix -> env var name and default
+    mapping = [
+        ("products", "PRODUCT_UPSTREAMS", "http://product-service:8000"),
+        ("auth", "AUTH_UPSTREAMS", "http://auth-service:8000"),
+        ("token", "AUTH_UPSTREAMS", "http://auth-service:8000"),
+        ("orders", "ORDER_UPSTREAMS", "http://order-service:8000"),
+        ("myorders", "ORDER_UPSTREAMS", "http://order-service:8000"),
+        ("payment", "PAYMENT_UPSTREAMS", "http://payment-service:8000"),
+        ("cart", "CART_UPSTREAMS", "http://cart-service:8000"),
+        ("logs", "LOG_UPSTREAMS", "http://log-service:8000"),
+        ("events", "LOG_UPSTREAMS", "http://log-service:8000"),
+        ("log", "LOG_UPSTREAMS", "http://log-service:8000"),
+    ]
+
+    for prefix, envname, default in mapping:
+        if p.startswith(prefix):
+            upstreams = os.getenv(envname, default)
+            # split and strip
+            pool = [u.strip() for u in upstreams.split(",") if u.strip()]
+            if not pool:
+                return None
+            # initialize counters/locks on first access
+            key = envname
+            if key not in _upstream_counters:
+                # protect init with global lock
+                with _upstream_init_lock:
+                    if key not in _upstream_counters:
+                        _upstream_counters[key] = 0
+                        _upstream_locks[key] = threading.Lock()
+                        _upstream_pools[key] = pool
+            # if pool changed (e.g., updated env), refresh list
+            if _upstream_pools.get(key) != pool:
+                with _upstream_locks[key]:
+                    _upstream_pools[key] = pool
+                    _upstream_counters[key] = 0
+
+            # select next upstream using round-robin
+            with _upstream_locks[key]:
+                # prefer upstreams that are known healthy; fall back to full pool
+                candidates = list(_upstream_pools[key])
+                any_healthy = any(_upstream_status.get(u) for u in candidates)
+                if any_healthy:
+                    pool_for_selection = [u for u in candidates if _upstream_status.get(u)]
+                else:
+                    pool_for_selection = candidates
+
+                idx = _upstream_counters[key]
+                upstream = pool_for_selection[idx % len(pool_for_selection)]
+                _upstream_counters[key] = (idx + 1) % len(pool_for_selection)
+            return upstream
+
     return None
+
+
+# upstream pool state (keyed by ENV var name)
+_upstream_pools: dict = {}
+_upstream_counters: dict = {}
+_upstream_locks: dict = {}
+_upstream_init_lock = threading.Lock()
+_upstream_status: dict = {}  # maps upstream URL -> healthy(bool)
+HEALTH_CHECK_INTERVAL = float(os.getenv("UPSTREAM_HEALTH_INTERVAL", "5.0"))
+HEALTH_CHECK_TIMEOUT = float(os.getenv("UPSTREAM_HEALTH_TIMEOUT", "1.0"))
+
+
+def _check_upstream_once(key: str):
+    """Ping /health on all upstreams for a given pool key and update _upstream_status."""
+    pool = _upstream_pools.get(key, [])
+    for u in list(pool):
+        url = u.rstrip("/") + "/health"
+        healthy = False
+        try:
+            with httpx.Client(timeout=HEALTH_CHECK_TIMEOUT) as client:
+                r = client.get(url)
+                healthy = 200 <= r.status_code < 300
+        except Exception:
+            healthy = False
+        _upstream_status[u] = healthy
+
+
+def _health_check_loop():
+    while True:
+        try:
+            keys = list(_upstream_pools.keys())
+            for k in keys:
+                # perform check for this pool
+                try:
+                    _check_upstream_once(k)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        time_to_sleep = HEALTH_CHECK_INTERVAL
+        try:
+            # sleep in small increments to be more responsive to shutdown if needed
+            total = 0.0
+            while total < time_to_sleep:
+                threading.Event().wait(min(0.5, time_to_sleep - total))
+                total += 0.5
+        except Exception:
+            pass
+
+
+@app.on_event("startup")
+def _start_health_thread():
+    t = threading.Thread(target=_health_check_loop, daemon=True)
+    t.start()
 
 
 _log_base = os.getenv("LOG_SERVICE_URL", "http://log-service:8000")
@@ -178,29 +281,29 @@ async def proxy(full_path: str, request: Request):
                 content=body,
                 follow_redirects=False,
             )
-                if resp.status_code in (301, 302, 307, 308) and "location" in resp.headers:
-                    try:
-                        loc = resp.headers.get("location")
-                        logger.warning("upstream responded with redirect: %s -> %s", url, loc)
-                        parsed = urlparse(loc)
-                        # build a follow URL that targets the same upstream
-                        follow_path = parsed.path or ""
-                        if parsed.query:
-                            follow_path = follow_path + "?" + parsed.query
-                        follow_url = f"{upstream}/{follow_path.lstrip('/')}"
-                        logger.warning("rewritten follow_url: %s", follow_url)
-                        follow_resp = await client.request(
-                            request.method,
-                            follow_url,
-                            headers=headers,
-                            params=request.query_params,
-                            content=body,
-                            follow_redirects=True,
-                        )
-                        logger.warning("followed redirect, status=%s, snippet=%s", follow_resp.status_code, (follow_resp.text or '')[:200])
-                        resp = follow_resp
-                    except Exception as e:
-                        logger.error("failed to follow upstream redirect for %s -> %s: %s", url, loc if 'loc' in locals() else None, e, exc_info=True)
+            if resp.status_code in (301, 302, 307, 308) and "location" in resp.headers:
+                try:
+                    loc = resp.headers.get("location")
+                    logger.warning("upstream responded with redirect: %s -> %s", url, loc)
+                    parsed = urlparse(loc)
+                    # build a follow URL that targets the same upstream
+                    follow_path = parsed.path or ""
+                    if parsed.query:
+                        follow_path = follow_path + "?" + parsed.query
+                    follow_url = f"{upstream}/{follow_path.lstrip('/')}"
+                    logger.warning("rewritten follow_url: %s", follow_url)
+                    follow_resp = await client.request(
+                        request.method,
+                        follow_url,
+                        headers=headers,
+                        params=request.query_params,
+                        content=body,
+                        follow_redirects=True,
+                    )
+                    logger.warning("followed redirect, status=%s, snippet=%s", follow_resp.status_code, (follow_resp.text or '')[:200])
+                    resp = follow_resp
+                except Exception as e:
+                    logger.error("failed to follow upstream redirect for %s -> %s: %s", url, loc if 'loc' in locals() else None, e, exc_info=True)
         except httpx.RequestError as exc:
             try:
                 logger.error("Upstream request failed for %s -> %s: %s", url, full_path, exc, exc_info=True)

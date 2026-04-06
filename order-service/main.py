@@ -1,9 +1,11 @@
 import os
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import text
 from fastapi import FastAPI, HTTPException, Depends, Header
-import os
 import httpx
 import logging
 import threading
@@ -54,6 +56,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_app(app)
 
 # Prometheus metrics (basic)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "order")

@@ -99,6 +99,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 engine = create_engine(DATABASE_URL, echo=True)
 
@@ -121,6 +124,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_app(app)
 
 # Prometheus metrics (basic)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "auth")

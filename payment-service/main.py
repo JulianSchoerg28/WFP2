@@ -1,6 +1,9 @@
+import os
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 from datetime import datetime
 from fastapi import FastAPI
-import os
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -50,6 +53,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_app(app)
 
 # Prometheus metrics (basic)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "payment")

@@ -1,7 +1,10 @@
+import os
+from tracing import setup_tracing, instrument_app
+setup_tracing()
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 from typing import Optional
 from datetime import datetime
-import os
 import httpx
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -59,6 +62,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+instrument_app(app)
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=os.getenv("AUTH_TOKEN_URL", "http://localhost:8002/token"))
     
 # Prometheus metrics (basic)
