@@ -81,6 +81,7 @@ class ProductUpdate(SQLModel):
 
 
 from tracing import setup_tracing, instrument_app
+from latency import add_latency_middleware
 setup_tracing()
 
 engine = create_engine(DATABASE_URL, echo=True)
@@ -102,6 +103,7 @@ app.add_middleware(
 )
 
 instrument_app(app)
+add_latency_middleware(app)
 
 # expose container instance id for testing load distribution
 INSTANCE_ID = os.getenv("INSTANCE_ID") or socket.gethostname()

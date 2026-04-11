@@ -1,5 +1,6 @@
 import os
 from tracing import setup_tracing, instrument_app
+from latency import add_latency_middleware
 setup_tracing()
 
 from fastapi import FastAPI, Depends, HTTPException, Query
@@ -64,6 +65,7 @@ app.add_middleware(
 )
 
 instrument_app(app)
+add_latency_middleware(app)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=os.getenv("AUTH_TOKEN_URL", "http://localhost:8002/token"))
     
