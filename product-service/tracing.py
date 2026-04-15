@@ -27,7 +27,8 @@ def setup_tracing():
         "OTEL_SERVICE_NAME", os.getenv("SERVICE_NAME", "unknown")
     )
     resource = Resource.create({"service.name": service_name})
-    provider = TracerProvider(resource=resource)
+    sampler = _build_sampler()
+    provider = TracerProvider(resource=resource, sampler=sampler)
     exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
@@ -44,6 +45,17 @@ def instrument_app(app):
         return
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
     FastAPIInstrumentor.instrument_app(app)
+
+
+def _build_sampler():
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, TraceIdRatioBased
+    strategy = os.getenv("SAMPLING_STRATEGY", "always_on").lower()
+    if strategy == "always_on":
+        return ALWAYS_ON
+    elif strategy == "head":
+        rate = float(os.getenv("SAMPLING_HEAD_RATE", "0.1"))
+        return TraceIdRatioBased(rate)
+    return ALWAYS_ON
 
 
 def _instr_httpx():
