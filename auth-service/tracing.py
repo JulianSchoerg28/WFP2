@@ -54,11 +54,11 @@ def _build_sampler():
     """Return a sampler based on SAMPLING_STRATEGY env var."""
     from opentelemetry.sdk.trace.sampling import ALWAYS_ON, TraceIdRatioBased
     strategy = os.getenv("SAMPLING_STRATEGY", "always_on").lower()
-    if strategy == "always_on":
-        return ALWAYS_ON
-    elif strategy == "head":
+    if strategy == "head":
         rate = float(os.getenv("SAMPLING_HEAD_RATE", "0.1"))
         return TraceIdRatioBased(rate)
+    # "tail" and "always_on": send all spans to the collector;
+    # tail sampling decisions are made by the OTel Collector, not the SDK.
     return ALWAYS_ON
 
 

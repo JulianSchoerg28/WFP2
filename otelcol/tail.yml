@@ -1,0 +1,35 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  tail_sampling:
+    # How long to wait after the last span before making a sampling decision.
+    # Must be longer than the longest expected trace duration.
+    decision_wait: 15s
+    num_traces: 50000
+    expected_new_traces_per_sec: 200
+    policies:
+      - name: latency-outlier
+        type: latency
+        latency:
+          threshold_ms: ${TAIL_LATENCY_THRESHOLD_MS}
+  batch:
+
+exporters:
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # tail_sampling must run before batch so it can drop traces before they are flushed
+      processors: [tail_sampling, batch]
+      exporters: [otlp]

@@ -8,9 +8,21 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686"
+    restart: unless-stopped
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otelcol/${OTELCOL_CONFIG:-passthrough}.yml"]
+    volumes:
+      - ./otelcol:/etc/otelcol:ro
+    environment:
+      - TAIL_LATENCY_THRESHOLD_MS=${TAIL_LATENCY_THRESHOLD_MS:-500}
+    ports:
       - "4317:4317"
       - "4318:4318"
     restart: unless-stopped
+    depends_on:
+      - jaeger
 
   product-service:
     build: ./product-service
@@ -22,7 +34,7 @@ services:
       - AUTH_TOKEN_URL=http://auth-service:8000/token
       - LOG_SERVICE_URL=http://log-service:8000
       - SERVICE_NAME=product
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=product-service
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
       - LATENCY_DB_DELAY_MS=${LATENCY_DB_DELAY_MS:-0}
@@ -47,7 +59,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev_secret}
       - ALGORITHM=${ALGORITHM:-HS256}
       - SERVICE_NAME=auth
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=auth-service
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
       - LATENCY_DB_DELAY_MS=${LATENCY_DB_DELAY_MS:-0}
@@ -74,7 +86,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-some-internal-key}
       - LOG_SERVICE_URL=http://log-service:8000
       - SERVICE_NAME=payment
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=payment-service
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
 
@@ -91,7 +103,7 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-some-internal-key}
       - LOG_SERVICE_URL=http://log-service:8000
       - SERVICE_NAME=order
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=order-service
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
       - LATENCY_DB_DELAY_MS=${LATENCY_DB_DELAY_MS:-0}
@@ -118,7 +130,7 @@ services:
       - PRODUCT_SERVICE_URL=http://product-service:8000
       - LOG_SERVICE_URL=http://log-service:8000
       - SERVICE_NAME=cart
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=cart-service
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
       - LATENCY_DB_DELAY_MS=${LATENCY_DB_DELAY_MS:-0}
@@ -141,7 +153,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-replace_this_with_a_strong_secret}
       - LOG_SERVICE_URL=http://log-service:8000
       - SERVICE_NAME=gateway
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=api-gateway
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
       - PRODUCT_UPSTREAMS=http://product-service:8000
