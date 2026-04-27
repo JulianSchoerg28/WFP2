@@ -188,7 +188,7 @@ services:
       - ORDER_CONSUMER_RETRY_ATTEMPTS=3
       - ORDER_CONSUMER_BACKOFF_INITIAL=3.0
       - ORDER_CONSUMER_BACKOFF_MULTIPLIER=2.0
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317
       - OTEL_SERVICE_NAME=order-consumer
       - SAMPLING_STRATEGY=${SAMPLING_STRATEGY:-always_on}
     restart: unless-stopped

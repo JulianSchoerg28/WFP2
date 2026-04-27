@@ -118,4 +118,48 @@ for ($i = 1; $i -le 10; $i++) {
 
 Write-Host ""
 Write-Host "-> Jaeger: http://localhost:16686" -ForegroundColor Yellow
+
+Write-Host ""
+Write-Host "ENTER druecken fuer PHASE 3 (Tail-based, Latenz > 500ms)..." -ForegroundColor White
+Read-Host | Out-Null
+
+# ── PHASE 3: tail-based (Latenz > 500ms) ─────────────────────────────────────
+
+Write-Host "=================================================" -ForegroundColor Green
+Write-Host "  PHASE 3: Tail-based Sampling (Latenz > 500ms)" -ForegroundColor Green
+Write-Host "=================================================" -ForegroundColor Green
+
+$env:SAMPLING_STRATEGY           = "tail"
+$env:OTELCOL_CONFIG              = "tail"
+$env:TAIL_LATENCY_THRESHOLD_MS   = "500"
+$env:LATENCY_SPORADIC_ENABLED    = "true"
+$env:LATENCY_SPORADIC_PROB       = "0.5"
+$env:LATENCY_SPORADIC_MIN_MS     = "600"
+$env:LATENCY_SPORADIC_MAX_MS     = "2000"
+
+Step "Jaeger leeren + Services mit tail-config neu starten"
+docker compose restart jaeger 2>&1 | Out-Null
+docker compose up -d 2>&1 | Out-Null
+Start-Sleep -Seconds 8
+Ok "Collector mit tail_sampling aktiv (Schwelle 500ms)"
+
+Step "10x Order senden (nur langsame werden in Jaeger angezeigt)"
+for ($i = 1; $i -le 10; $i++) {
+    $TOKEN = Get-Token
+    Add-ToCart $TOKEN $PRODUCT_ID
+    try {
+        $order = Invoke-RestMethod -Uri "$GW/orders" -Method Post -Headers @{ Authorization = "Bearer $TOKEN" }
+        Ok "Order $i  (ID=$($order.id))"
+    } catch {
+        Err "Order $i fehlgeschlagen"
+    }
+}
+
+Write-Host ""
+Write-Host "Warte 20s auf Collector-Entscheidung (decision_wait=15s)..." -ForegroundColor DarkYellow
+Start-Sleep -Seconds 20
+
+Write-Host ""
+Write-Host "-> Jaeger: http://localhost:16686" -ForegroundColor Yellow
+Write-Host "   Nur Traces mit Latenz > 500ms sind sichtbar!" -ForegroundColor Green
 Write-Host "   Finished" -ForegroundColor Yellow
