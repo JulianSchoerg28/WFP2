@@ -4,6 +4,7 @@ import time
 import pika
 import requests
 import logging
+from tracing import setup_tracing
 
 logger = logging.getLogger("order-consumer")
 
@@ -123,4 +124,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_tracing()
     main()
