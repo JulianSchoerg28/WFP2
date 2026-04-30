@@ -17,7 +17,8 @@ def setup_tracing():
 
     service_name = os.getenv("OTEL_SERVICE_NAME", "order-consumer")
     resource = Resource.create({"service.name": service_name})
-    provider = TracerProvider(resource=resource)
+    sampler = _build_sampler()
+    provider = TracerProvider(resource=resource, sampler=sampler)
     exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
@@ -29,3 +30,12 @@ def setup_tracing():
         pass
 
     _enabled = True
+
+
+def _build_sampler():
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, TraceIdRatioBased
+    strategy = os.getenv("SAMPLING_STRATEGY", "always_on").lower()
+    if strategy == "head":
+        rate = float(os.getenv("SAMPLING_HEAD_RATE", "0.1"))
+        return TraceIdRatioBased(rate)
+    return ALWAYS_ON

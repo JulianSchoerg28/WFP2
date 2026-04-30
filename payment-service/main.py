@@ -1,5 +1,6 @@
 import os
 from tracing import setup_tracing, instrument_app
+from latency import add_latency_middleware
 setup_tracing()
 
 from datetime import datetime
@@ -55,6 +56,7 @@ app.add_middleware(
 )
 
 instrument_app(app)
+add_latency_middleware(app)
 
 # Prometheus metrics (basic)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "payment")

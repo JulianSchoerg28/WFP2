@@ -27,9 +27,9 @@ Write-Host "  PHASE 1: always_on Sampling (100%)" -ForegroundColor Cyan
 Write-Host "=================================================" -ForegroundColor Cyan
 
 $env:LATENCY_SPORADIC_ENABLED = "true"
-$env:LATENCY_SPORADIC_PROB    = "0.7"
-$env:LATENCY_SPORADIC_MIN_MS  = "300"
-$env:LATENCY_SPORADIC_MAX_MS  = "1500"
+$env:LATENCY_SPORADIC_PROB    = "0.1"
+$env:LATENCY_SPORADIC_MIN_MS  = "500"
+$env:LATENCY_SPORADIC_MAX_MS  = "2000"
 $env:SAMPLING_STRATEGY        = "always_on"
 
 Step "Docker starten + Jaeger-Traces loeschen"
@@ -133,8 +133,8 @@ $env:SAMPLING_STRATEGY           = "tail"
 $env:OTELCOL_CONFIG              = "tail"
 $env:TAIL_LATENCY_THRESHOLD_MS   = "500"
 $env:LATENCY_SPORADIC_ENABLED    = "true"
-$env:LATENCY_SPORADIC_PROB       = "0.5"
-$env:LATENCY_SPORADIC_MIN_MS     = "600"
+$env:LATENCY_SPORADIC_PROB       = "0.1"
+$env:LATENCY_SPORADIC_MIN_MS     = "500"
 $env:LATENCY_SPORADIC_MAX_MS     = "2000"
 
 Step "Jaeger leeren + Services mit tail-config neu starten"
