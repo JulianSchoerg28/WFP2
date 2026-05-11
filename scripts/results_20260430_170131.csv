@@ -1,0 +1,6 @@
+name,label,strategy,head_rate,n_requests,slow_requests_client,traces_in_jaeger,outliers_in_jaeger,detection_rate_pct,detection_rate_vs_baseline,avg_response_ms,p95_response_ms,p99_response_ms,otelcol_cpu_rate,otelcol_mem_mb,spans_received_per_s,spans_exported_per_s
+always_on,Always-On (100%),always_on,-,100,21,124,23,109.5,-,427.0,1650.3,4431.3,,,,
+head_50,Head-based (50%),head,0.5,100,16,62,11,68.8,47.8,306.6,1346.0,2063.5,,,,
+head_10,Head-based (10%),head,0.1,100,11,17,2,18.2,8.7,263.2,1383.1,2035.0,,,,
+head_01,Head-based (1%),head,0.01,100,8,5,2,25.0,8.7,237.3,1323.9,2056.5,,,,
+tail_500ms,Tail-based (>500ms),tail,-,100,8,10,9,112.5,39.1,227.1,1410.5,1918.1,,,,

@@ -20,6 +20,7 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
+      - "8888:8888"
     restart: unless-stopped
     depends_on:
       - jaeger
