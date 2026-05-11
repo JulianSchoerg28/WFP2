@@ -264,10 +264,10 @@ def query_prometheus(metric: str) -> float | None:
 
 def query_prometheus_resource() -> dict:
     """Liest CPU und Memory des otelcol aus Prometheus."""
-    cpu = query_prometheus('rate(otelcol_process_cpu_seconds_total[1m])')
+    cpu = query_prometheus('rate(otelcol_process_cpu_seconds[1m])')
     mem = query_prometheus('otelcol_process_memory_rss')
-    spans_received = query_prometheus('rate(otelcol_receiver_accepted_spans_total[1m])')
-    spans_exported = query_prometheus('rate(otelcol_exporter_sent_spans_total[1m])')
+    spans_received = query_prometheus('rate(otelcol_receiver_accepted_spans[1m])')
+    spans_exported = query_prometheus('rate(otelcol_exporter_sent_spans[1m])')
     return {
         "otelcol_cpu_rate":       round(cpu, 4)             if cpu is not None else None,
         "otelcol_mem_mb":         round(mem / 1024 / 1024)  if mem is not None else None,
