@@ -7,7 +7,8 @@ Voraussetzungen:
   pip install matplotlib pandas
 
 Ausfuehren:
-  python scripts/visualize.py results_YYYYMMDD_HHMMSS.csv
+  python scripts/visualize.py                         # neueste CSV in scripts/results/
+  python scripts/visualize.py scripts/results/results_YYYYMMDD_HHMMSS.csv
 """
 
 import sys
@@ -20,20 +21,18 @@ import matplotlib.ticker as mtick
 
 COLORS = {
     "always_on":  "#2196F3",  # Blau
-    "head_50":    "#4CAF50",  # Grün
     "head_10":    "#FF9800",  # Orange
     "head_01":    "#F44336",  # Rot
-    "tail_500ms": "#9C27B0",  # Lila
+    "tail_1500ms": "#9C27B0",  # Lila
 }
 
-OUT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
-# ── CSV laden ─────────────────────────────────────────────────────────────────
+# ── Hilfsfunktionen ───────────────────────────────────────────────────────────
 
 def load_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
-    df = df[df["error"].isna()] if "error" in df.columns else df
-    return df
+    return df[df["error"].isna()] if "error" in df.columns else df
 
 
 def bar_colors(df: pd.DataFrame) -> list:
@@ -41,7 +40,8 @@ def bar_colors(df: pd.DataFrame) -> list:
 
 
 def save(fig, name: str):
-    path = os.path.join(OUT_DIR, name)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, name)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     print(f"  Gespeichert: {path}")
     plt.close(fig)
@@ -54,7 +54,6 @@ def plot_detection_rate(df: pd.DataFrame):
 
     bars = ax.bar(df["label"], df["detection_rate_pct"], color=bar_colors(df), width=0.55, zorder=3)
 
-    # Wert über jedem Balken
     for bar, val in zip(bars, df["detection_rate_pct"]):
         ax.text(
             bar.get_x() + bar.get_width() / 2,
@@ -69,7 +68,7 @@ def plot_detection_rate(df: pd.DataFrame):
     ax.set_xlabel("Sampling-Strategie")
     ax.set_title("Detection Rate pro Sampling-Strategie\n"
                  "(Anteil erkannter Latenz-Ausreißer ≥ 500ms)")
-    ax.axhline(100, color="gray", linestyle="--", linewidth=0.8, label="Baseline (Always-On)")
+    ax.axhline(100, color="gray", linestyle="--", linewidth=0.8, label="100% Referenz")
     ax.legend(fontsize=9)
     ax.grid(axis="y", linestyle="--", alpha=0.4, zorder=0)
     ax.set_axisbelow(True)
@@ -130,7 +129,7 @@ def plot_tradeoff(df: pd.DataFrame):
     save(fig, "plot_tradeoff.png")
 
 
-# ── Grafik 4: P95 Latenz ─────────────────────────────────────────────────────
+# ── Grafik 4: Avg & P95 Response Time ────────────────────────────────────────
 
 def plot_latency(df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(9, 5))
@@ -138,8 +137,8 @@ def plot_latency(df: pd.DataFrame):
     x = range(len(df))
     width = 0.3
 
-    bars_avg = ax.bar([i - width/2 for i in x], df["avg_response_ms"],
-                      width=width, label="Avg", color="#90CAF9", zorder=3)
+    ax.bar([i - width/2 for i in x], df["avg_response_ms"],
+           width=width, label="Avg", color="#90CAF9", zorder=3)
     bars_p95 = ax.bar([i + width/2 for i in x], df["p95_response_ms"],
                       width=width, label="P95", color=bar_colors(df), zorder=3)
 
@@ -172,7 +171,6 @@ def plot_resources(df: pd.DataFrame):
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Memory
     ax1.bar(df["label"], df["otelcol_mem_mb"], color=bar_colors(df), width=0.55, zorder=3)
     ax1.set_ylabel("Memory (MB)")
     ax1.set_title("otelcol Memory-Verbrauch")
@@ -180,7 +178,6 @@ def plot_resources(df: pd.DataFrame):
     ax1.set_axisbelow(True)
     plt.setp(ax1.get_xticklabels(), rotation=15, ha="right")
 
-    # Spans exported
     if "spans_exported_per_s" in df.columns and not df["spans_exported_per_s"].isna().all():
         ax2.bar(df["label"], df["spans_exported_per_s"], color=bar_colors(df), width=0.55, zorder=3)
         ax2.set_ylabel("Spans/s (exportiert)")
@@ -194,14 +191,14 @@ def plot_resources(df: pd.DataFrame):
     save(fig, "plot_resources.png")
 
 
-# ── Zusammenfassungs-Tabelle ausgeben ─────────────────────────────────────────
+# ── Zusammenfassungs-Tabelle ──────────────────────────────────────────────────
 
 def print_summary(df: pd.DataFrame):
-    print(f"\n{'=' * 75}")
+    print(f"\n{'=' * 65}")
     print(f"  ZUSAMMENFASSUNG")
-    print(f"{'=' * 75}")
+    print(f"{'=' * 65}")
     print(f"{'Strategie':<22} {'Traces':<8} {'Ausreißer':<11} {'Detection':<12} {'P95 ms'}")
-    print("-" * 75)
+    print("-" * 65)
     for _, row in df.iterrows():
         print(
             f"{row['label']:<22} "
@@ -216,13 +213,13 @@ def print_summary(df: pd.DataFrame):
 
 def main():
     if len(sys.argv) < 2:
-        # Neueste CSV im scripts/ Ordner automatisch finden
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        csvs = sorted([f for f in os.listdir(script_dir) if f.startswith("results_") and f.endswith(".csv")])
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        csvs = sorted([f for f in os.listdir(RESULTS_DIR) if f.startswith("results_") and f.endswith(".csv")])
         if not csvs:
-            print("Usage: python visualize.py results_YYYYMMDD_HHMMSS.csv")
+            print("Keine CSV in scripts/results/ gefunden.")
+            print("Usage: python scripts/visualize.py scripts/results/results_YYYYMMDD_HHMMSS.csv")
             sys.exit(1)
-        csv_path = os.path.join(script_dir, csvs[-1])
+        csv_path = os.path.join(RESULTS_DIR, csvs[-1])
         print(f"Neueste CSV verwendet: {csvs[-1]}")
     else:
         csv_path = sys.argv[1]
@@ -238,7 +235,7 @@ def main():
     plot_resources(df)
 
     print_summary(df)
-    print(f"\nAlle Grafiken gespeichert in: {OUT_DIR}")
+    print(f"\nAlle Grafiken gespeichert in: {RESULTS_DIR}")
 
 
 if __name__ == "__main__":

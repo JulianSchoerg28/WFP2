@@ -30,10 +30,9 @@ JAEGER      = "http://localhost:16686"
 PROMETHEUS  = "http://localhost:9090"
 
 N_REQUESTS            = 100    # Requests pro Strategie
-SPORADIC_PROB         = 0.1    # 10% der Requests bekommen einen Spike
-SPORADIC_MIN_MS       = 500    # Mindestdauer eines Spikes
-SPORADIC_MAX_MS       = 2000   # Maximaldauer eines Spikes
-OUTLIER_THRESHOLD_MS  = 500    # Ab wann gilt ein Trace als Ausreißer
+SPORADIC_EVERY_N      = 10     # Jeder N-te Request bekommt einen Spike → exakt N_REQUESTS/EVERY_N Ausreißer
+SPORADIC_FIXED_MS     = 2000   # Feste Spike-Dauer in ms — weit über normaler System-Latenz
+OUTLIER_THRESHOLD_MS  = 1500   # Schwellwert: klar über System-Latenz (~<300ms), klar unter Spike (2000ms)
 
 # Welche Services bei Strategie-Wechsel neu gestartet werden
 RESTARTABLE = [
@@ -51,13 +50,6 @@ STRATEGIES = [
         "OTELCOL_CONFIG":     "passthrough",
     },
     {
-        "name":               "head_50",
-        "label":              "Head-based (50%)",
-        "SAMPLING_STRATEGY":  "head",
-        "SAMPLING_HEAD_RATE": "0.5",
-        "OTELCOL_CONFIG":     "passthrough",
-    },
-    {
         "name":               "head_10",
         "label":              "Head-based (10%)",
         "SAMPLING_STRATEGY":  "head",
@@ -72,11 +64,11 @@ STRATEGIES = [
         "OTELCOL_CONFIG":     "passthrough",
     },
     {
-        "name":                    "tail_500ms",
-        "label":                   "Tail-based (>500ms)",
+        "name":                    f"tail_{OUTLIER_THRESHOLD_MS}ms",
+        "label":                   f"Tail-based (>{OUTLIER_THRESHOLD_MS}ms)",
         "SAMPLING_STRATEGY":       "tail",
         "OTELCOL_CONFIG":          "tail",
-        "TAIL_LATENCY_THRESHOLD_MS": "500",
+        "TAIL_LATENCY_THRESHOLD_MS": str(OUTLIER_THRESHOLD_MS),
     },
 ]
 
@@ -129,13 +121,24 @@ def clear_jaeger():
     time.sleep(4)
 
 
+BUILDABLE = [
+    "api-gateway", "product-service", "auth-service",
+    "order-service", "cart-service", "payment-service",
+    "order-consumer", "log-service",
+]
+
+def build_services():
+    """Baut alle Service-Images neu (einmalig vor dem Experiment)."""
+    log("Images bauen (einmalig, dauert ~1 Minute)...")
+    docker(["build"] + BUILDABLE, silent=False)
+
 def restart_services():
     """Startet alle relevanten Services neu (ohne DB/RabbitMQ)."""
     log("Services neu starten...")
     docker(["up", "-d", "--force-recreate"] + RESTARTABLE)
 
 
-def wait_for_gateway(timeout: int = 90) -> bool:
+def wait_for_gateway(timeout: int = 150) -> bool:
     """Wartet bis der Gateway erreichbar ist."""
     log("Warte auf Gateway...")
     deadline = time.time() + timeout
@@ -184,19 +187,21 @@ def get_token() -> str:
 
 
 def send_requests(n: int) -> list[float]:
-    """Schickt N GET /products/ Requests und gibt Response-Zeiten in ms zurueck."""
+    """Schickt N GET /products/ Requests und gibt Response-Zeiten in ms zurueck.
+    Jeder SPORADIC_EVERY_N-te Request bekommt X-Inject-Latency: true gesetzt."""
     times = []
     token = get_token()
-    headers = {"Authorization": f"Bearer {token}"}
 
     for i in range(n):
-        # Token alle 20 Requests erneuern (laeuft nach 30min ab)
         if i > 0 and i % 20 == 0:
             try:
                 token = get_token()
-                headers = {"Authorization": f"Bearer {token}"}
             except Exception:
                 pass
+
+        headers = {"Authorization": f"Bearer {token}"}
+        if (i + 1) % SPORADIC_EVERY_N == 0:
+            headers["X-Inject-Latency"] = "true"
 
         start = time.monotonic()
         try:
@@ -273,7 +278,7 @@ def query_prometheus_resource() -> dict:
 
 # ── Experiment ────────────────────────────────────────────────────────────────
 
-def run_strategy(strategy: dict, baseline_outliers: int | None) -> dict:
+def run_strategy(strategy: dict, baseline_outliers: int | None = None) -> dict:
     name  = strategy["name"]
     label = strategy["label"]
 
@@ -287,9 +292,7 @@ def run_strategy(strategy: dict, baseline_outliers: int | None) -> dict:
         "OTELCOL_CONFIG":            strategy.get("OTELCOL_CONFIG", "passthrough"),
         "TAIL_LATENCY_THRESHOLD_MS": strategy.get("TAIL_LATENCY_THRESHOLD_MS", "500"),
         "LATENCY_SPORADIC_ENABLED":  "true",
-        "LATENCY_SPORADIC_PROB":     str(SPORADIC_PROB),
-        "LATENCY_SPORADIC_MIN_MS":   str(SPORADIC_MIN_MS),
-        "LATENCY_SPORADIC_MAX_MS":   str(SPORADIC_MAX_MS),
+        "LATENCY_SPORADIC_FIXED_MS": str(SPORADIC_FIXED_MS),
     }
 
     log("ENV aktualisieren...")
@@ -306,11 +309,11 @@ def run_strategy(strategy: dict, baseline_outliers: int | None) -> dict:
     log("Admin sicherstellen...")
     ensure_admin()
 
-    log(f"{N_REQUESTS} Requests senden (Sporadic Prob={SPORADIC_PROB})...")
+    log(f"{N_REQUESTS} Requests senden (jeder {SPORADIC_EVERY_N}. = Spike)...")
     times = send_requests(N_REQUESTS)
 
-    # Tail-based braucht extra Wartezeit (decision_wait=15s im Collector)
-    extra_wait = 20 if strategy.get("OTELCOL_CONFIG") == "tail" else 5
+    # Tail-based braucht extra Wartezeit: 15s decision_wait + ~5s batch flush
+    extra_wait = 30 if strategy.get("OTELCOL_CONFIG") == "tail" else 5
     log(f"Warte {extra_wait}s auf Trace-Verarbeitung...")
     time.sleep(extra_wait)
 
@@ -327,29 +330,24 @@ def run_strategy(strategy: dict, baseline_outliers: int | None) -> dict:
     p95_ms      = sorted_t[int(len(sorted_t) * 0.95)]
     p99_ms      = sorted_t[int(len(sorted_t) * 0.99)]
 
-    # Detection Rate: always_on ist Baseline (= 100%)
-    # Alle anderen Strategien werden daran gemessen.
-    if baseline_outliers is not None and baseline_outliers > 0:
-        detection_rate = round(outliers_in_jaeger / baseline_outliers * 100, 1)
-    elif strategy.get("name") == "always_on":
-        detection_rate = 100.0  # always_on definiert die Baseline
+    # Detection Rate: Anteil der client-seitig langsamen Requests die in Jaeger auftauchen.
+    # slow_requests_client ist die Ground Truth — unabhängig vom Server-Counter.
+    if actual_slow > 0:
+        detection_rate = round(outliers_in_jaeger / actual_slow * 100, 1)
     else:
         detection_rate = 0.0
 
-    vs_baseline = f"{detection_rate:.1f}" if baseline_outliers is not None else "-"
-
     result = {
-        "name":                       name,
-        "label":                      label,
-        "strategy":                   strategy.get("SAMPLING_STRATEGY"),
-        "head_rate":                   strategy.get("SAMPLING_HEAD_RATE", "-"),
-        "n_requests":                  N_REQUESTS,
-        "slow_requests_client":        actual_slow,
-        "traces_in_jaeger":            total_traces,
-        "outliers_in_jaeger":          outliers_in_jaeger,
-        "detection_rate_pct":          detection_rate,
-        "detection_rate_vs_baseline":  vs_baseline,
-        "avg_response_ms":             round(avg_ms, 1),
+        "name":                  name,
+        "label":                 label,
+        "strategy":              strategy.get("SAMPLING_STRATEGY"),
+        "head_rate":             strategy.get("SAMPLING_HEAD_RATE", "-"),
+        "n_requests":            N_REQUESTS,
+        "slow_requests_client":  actual_slow,
+        "traces_in_jaeger":      total_traces,
+        "outliers_in_jaeger":    outliers_in_jaeger,
+        "detection_rate_pct":    detection_rate,
+        "avg_response_ms":       round(avg_ms, 1),
         "p95_response_ms":             round(p95_ms, 1),
         "p99_response_ms":             round(p99_ms, 1),
         **prom,
@@ -368,7 +366,7 @@ def save_csv(results: list[dict], path: str):
         "name", "label", "strategy", "head_rate",
         "n_requests", "slow_requests_client",
         "traces_in_jaeger", "outliers_in_jaeger",
-        "detection_rate_pct", "detection_rate_vs_baseline",
+        "detection_rate_pct",
         "avg_response_ms", "p95_response_ms", "p99_response_ms",
         "otelcol_cpu_rate", "otelcol_mem_mb",
         "spans_received_per_s", "spans_exported_per_s",
@@ -383,9 +381,9 @@ def print_table(results: list[dict]):
     print(f"\n{'=' * 80}")
     print(f"  ERGEBNISSE")
     print(f"{'=' * 80}")
-    header = f"{'Strategie':<22} {'Traces':<8} {'Ausreißer':<11} {'Detection':<12} {'vs Baseline':<13} {'P95 ms'}"
+    header = f"{'Strategie':<22} {'Traces':<8} {'Ausreißer':<11} {'Detection':<12} {'P95 ms'}"
     print(header)
-    print("-" * 80)
+    print("-" * 65)
     for r in results:
         if "error" in r:
             print(f"{r['label']:<22}  ERROR: {r['error']}")
@@ -394,8 +392,7 @@ def print_table(results: list[dict]):
             f"{r['label']:<22} "
             f"{r['traces_in_jaeger']:<8} "
             f"{r['outliers_in_jaeger']:<11} "
-            f"{r['detection_rate_pct']:>6.1f}%     "
-            f"{str(r['detection_rate_vs_baseline']):>8}%      "
+            f"{r['detection_rate_pct']:>6.1f}%      "
             f"{r['p95_response_ms']:.0f}"
         )
 
@@ -407,10 +404,14 @@ def main():
     print("  BA2 Experiment: Sampling Strategy Evaluation")
     print("=" * 55)
     print(f"  Requests pro Strategie : {N_REQUESTS}")
-    print(f"  Sporadic Wahrscheinlichkeit: {int(SPORADIC_PROB * 100)}%")
-    print(f"  Spike-Bereich          : {SPORADIC_MIN_MS}–{SPORADIC_MAX_MS}ms")
+    print(f"  Spikes                 : jeder {SPORADIC_EVERY_N}. Request → exakt {N_REQUESTS // SPORADIC_EVERY_N} Ausreißer")
+    print(f"  Spike-Dauer            : {SPORADIC_FIXED_MS}ms (fix)")
     print(f"  Outlier-Schwelle       : {OUTLIER_THRESHOLD_MS}ms")
     print(f"  Strategien             : {len(STRATEGIES)}")
+
+    build_services()
+    log("Warte 10s nach Build...")
+    time.sleep(10)
 
     results = []
     baseline_outliers = None
@@ -423,8 +424,10 @@ def main():
             baseline_outliers = result.get("outliers_in_jaeger", 0)
             log(f"Baseline gesetzt: {baseline_outliers} Ausreißer")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path  = os.path.join(os.path.dirname(__file__), f"results_{timestamp}.csv")
+    timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    csv_path    = os.path.join(results_dir, f"results_{timestamp}.csv")
     save_csv(results, csv_path)
 
     print_table(results)

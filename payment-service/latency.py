@@ -1,40 +1,22 @@
 """Configurable latency injection for experiment scenarios.
 
 Controlled via environment variables (all disabled by default):
-  LATENCY_DB_DELAY_MS       – fixed sleep injected on every request (simulates slow DB)
-  LATENCY_CPU_WORK_MS       – busy-loop CPU burn per request
-  LATENCY_SPORADIC_ENABLED  – enable random sporadic spikes (true/false)
-  LATENCY_SPORADIC_PROB     – probability of a spike per request (0.0–1.0, default 0.05)
-  LATENCY_SPORADIC_MIN_MS   – min spike duration in ms (default 200)
-  LATENCY_SPORADIC_MAX_MS   – max spike duration in ms (default 2000)
+  LATENCY_SPORADIC_ENABLED  – enable spike injection (true/false)
+  LATENCY_SPORADIC_FIXED_MS – fixed spike duration in ms (default 1000)
+
+Spikes are triggered by the X-Inject-Latency: true request header,
+set by the experiment script on every N-th request.
 """
 
 import os
 import time
-import random
 
-DB_DELAY_S = int(os.getenv("LATENCY_DB_DELAY_MS", "0")) / 1000.0
-CPU_WORK_S = int(os.getenv("LATENCY_CPU_WORK_MS", "0")) / 1000.0
 SPORADIC_ENABLED = os.getenv("LATENCY_SPORADIC_ENABLED", "false").lower() in ("1", "true", "yes")
-SPORADIC_PROB = float(os.getenv("LATENCY_SPORADIC_PROB", "0.05"))
-SPORADIC_MIN_S = int(os.getenv("LATENCY_SPORADIC_MIN_MS", "200")) / 1000.0
-SPORADIC_MAX_S = int(os.getenv("LATENCY_SPORADIC_MAX_MS", "2000")) / 1000.0
+SPORADIC_FIXED_S = int(os.getenv("LATENCY_SPORADIC_FIXED_MS", "1000")) / 1000.0
 
 
 def inject_latency():
-    if DB_DELAY_S > 0:
-        time.sleep(DB_DELAY_S)
-    if CPU_WORK_S > 0:
-        _cpu_burn(CPU_WORK_S)
-    if SPORADIC_ENABLED and random.random() < SPORADIC_PROB:
-        spike = random.uniform(SPORADIC_MIN_S, SPORADIC_MAX_S)
-        time.sleep(spike)
-
-
-def _cpu_burn(duration_s: float):
-    end = time.monotonic() + duration_s
-    while time.monotonic() < end:
-        pass
+    time.sleep(SPORADIC_FIXED_S)
 
 
 def add_latency_middleware(app):
@@ -42,6 +24,7 @@ def add_latency_middleware(app):
 
     @app.middleware("http")
     async def latency_middleware(request, call_next):
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, inject_latency)
+        if SPORADIC_ENABLED and request.headers.get("x-inject-latency") == "true":
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, inject_latency)
         return await call_next(request)
