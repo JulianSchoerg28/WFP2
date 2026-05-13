@@ -70,6 +70,16 @@ STRATEGIES = [
         "OTELCOL_CONFIG":          "tail",
         "TAIL_LATENCY_THRESHOLD_MS": str(OUTLIER_THRESHOLD_MS),
     },
+    {
+        "name":                          "adaptive",
+        "label":                         "Adaptive (5%→50%)",
+        "SAMPLING_STRATEGY":             "adaptive",
+        "OTELCOL_CONFIG":                "passthrough",
+        "SAMPLING_ADAPTIVE_BASE_RATE":   "0.05",
+        "SAMPLING_ADAPTIVE_BOOST_RATE":  "0.5",
+        "SAMPLING_ADAPTIVE_THRESHOLD_MS": "800",
+        "SAMPLING_ADAPTIVE_WINDOW":      "20",
+    },
 ]
 
 # ── Hilfsfunktionen ───────────────────────────────────────────────────────────
@@ -287,12 +297,16 @@ def run_strategy(strategy: dict, baseline_outliers: int | None = None) -> dict:
     print(f"{'=' * 55}")
 
     env_overrides = {
-        "SAMPLING_STRATEGY":         strategy.get("SAMPLING_STRATEGY", "always_on"),
-        "SAMPLING_HEAD_RATE":        strategy.get("SAMPLING_HEAD_RATE", "0.1"),
-        "OTELCOL_CONFIG":            strategy.get("OTELCOL_CONFIG", "passthrough"),
-        "TAIL_LATENCY_THRESHOLD_MS": strategy.get("TAIL_LATENCY_THRESHOLD_MS", "500"),
-        "LATENCY_SPORADIC_ENABLED":  "true",
-        "LATENCY_SPORADIC_FIXED_MS": str(SPORADIC_FIXED_MS),
+        "SAMPLING_STRATEGY":              strategy.get("SAMPLING_STRATEGY", "always_on"),
+        "SAMPLING_HEAD_RATE":             strategy.get("SAMPLING_HEAD_RATE", "0.1"),
+        "OTELCOL_CONFIG":                 strategy.get("OTELCOL_CONFIG", "passthrough"),
+        "TAIL_LATENCY_THRESHOLD_MS":      strategy.get("TAIL_LATENCY_THRESHOLD_MS", "500"),
+        "SAMPLING_ADAPTIVE_BASE_RATE":    strategy.get("SAMPLING_ADAPTIVE_BASE_RATE", "0.05"),
+        "SAMPLING_ADAPTIVE_BOOST_RATE":   strategy.get("SAMPLING_ADAPTIVE_BOOST_RATE", "0.5"),
+        "SAMPLING_ADAPTIVE_THRESHOLD_MS": strategy.get("SAMPLING_ADAPTIVE_THRESHOLD_MS", "800"),
+        "SAMPLING_ADAPTIVE_WINDOW":       strategy.get("SAMPLING_ADAPTIVE_WINDOW", "20"),
+        "LATENCY_SPORADIC_ENABLED":       "true",
+        "LATENCY_SPORADIC_FIXED_MS":      str(SPORADIC_FIXED_MS),
     }
 
     log("ENV aktualisieren...")

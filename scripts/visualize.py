@@ -24,6 +24,7 @@ COLORS = {
     "head_10":    "#FF9800",  # Orange
     "head_01":    "#F44336",  # Rot
     "tail_1500ms": "#9C27B0",  # Lila
+    "adaptive":   "#4CAF50",  # Gruen
 }
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
