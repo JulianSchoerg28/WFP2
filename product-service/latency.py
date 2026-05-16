@@ -25,6 +25,6 @@ def add_latency_middleware(app):
     @app.middleware("http")
     async def latency_middleware(request, call_next):
         if SPORADIC_ENABLED and request.headers.get("x-inject-latency") == "true":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, inject_latency)
         return await call_next(request)

@@ -29,7 +29,7 @@ GW          = "http://localhost:8000"
 JAEGER      = "http://localhost:16686"
 PROMETHEUS  = "http://localhost:9090"
 
-N_REQUESTS            = 100    # Requests pro Strategie
+N_REQUESTS            = 50 if "--quick" in sys.argv else 200   # --quick für schnellen Testlauf
 SPORADIC_EVERY_N      = 10     # Jeder N-te Request bekommt einen Spike → exakt N_REQUESTS/EVERY_N Ausreißer
 SPORADIC_FIXED_MS     = 2000   # Feste Spike-Dauer in ms — weit über normaler System-Latenz
 OUTLIER_THRESHOLD_MS  = 1500   # Schwellwert: klar über System-Latenz (~<300ms), klar unter Spike (2000ms)
@@ -352,18 +352,19 @@ def run_strategy(strategy: dict, baseline_outliers: int | None = None) -> dict:
         detection_rate = 0.0
 
     result = {
-        "name":                  name,
-        "label":                 label,
-        "strategy":              strategy.get("SAMPLING_STRATEGY"),
-        "head_rate":             strategy.get("SAMPLING_HEAD_RATE", "-"),
-        "n_requests":            N_REQUESTS,
-        "slow_requests_client":  actual_slow,
-        "traces_in_jaeger":      total_traces,
-        "outliers_in_jaeger":    outliers_in_jaeger,
-        "detection_rate_pct":    detection_rate,
-        "avg_response_ms":       round(avg_ms, 1),
-        "p95_response_ms":             round(p95_ms, 1),
-        "p99_response_ms":             round(p99_ms, 1),
+        "name":                   name,
+        "label":                  label,
+        "strategy":               strategy.get("SAMPLING_STRATEGY"),
+        "head_rate":              strategy.get("SAMPLING_HEAD_RATE", "-"),
+        "n_requests":             N_REQUESTS,
+        "slow_requests_client":   actual_slow,
+        "missed_critical_traces": actual_slow - outliers_in_jaeger,
+        "traces_in_jaeger":       total_traces,
+        "outliers_in_jaeger":     outliers_in_jaeger,
+        "detection_rate_pct":     detection_rate,
+        "avg_response_ms":        round(avg_ms, 1),
+        "p95_response_ms":        round(p95_ms, 1),
+        "p99_response_ms":        round(p99_ms, 1),
         **prom,
     }
 
@@ -379,6 +380,7 @@ def save_csv(results: list[dict], path: str):
     fieldnames = [
         "name", "label", "strategy", "head_rate",
         "n_requests", "slow_requests_client",
+        "missed_critical_traces",
         "traces_in_jaeger", "outliers_in_jaeger",
         "detection_rate_pct",
         "avg_response_ms", "p95_response_ms", "p99_response_ms",

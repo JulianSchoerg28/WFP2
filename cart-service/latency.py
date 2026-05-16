@@ -1,8 +1,8 @@
-"""Configurable latency injection for experiment scenarios.
+﻿"""Configurable latency injection for experiment scenarios.
 
 Controlled via environment variables (all disabled by default):
-  LATENCY_SPORADIC_ENABLED  – enable spike injection (true/false)
-  LATENCY_SPORADIC_FIXED_MS – fixed spike duration in ms (default 1000)
+  LATENCY_SPORADIC_ENABLED  â€“ enable spike injection (true/false)
+  LATENCY_SPORADIC_FIXED_MS â€“ fixed spike duration in ms (default 1000)
 
 Spikes are triggered by the X-Inject-Latency: true request header,
 set by the experiment script on every N-th request.
@@ -25,6 +25,7 @@ def add_latency_middleware(app):
     @app.middleware("http")
     async def latency_middleware(request, call_next):
         if SPORADIC_ENABLED and request.headers.get("x-inject-latency") == "true":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, inject_latency)
         return await call_next(request)
+

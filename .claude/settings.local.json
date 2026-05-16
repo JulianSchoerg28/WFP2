@@ -8,7 +8,9 @@
       "Bash(docker-compose down *)",
       "Bash(docker compose *)",
       "Bash(for service *)",
-      "PowerShell(foreach \\($service in @\\(\"auth-service\",\"cart-service\",\"order-service\",\"payment-service\"\\)\\) { Copy-Item \"C:\\\\Users\\\\Julian\\\\VSCode\\\\WFP2\\\\product-service\\\\latency.py\" \"C:\\\\Users\\\\Julian\\\\VSCode\\\\WFP2\\\\$service\\\\latency.py\" })"
+      "PowerShell(foreach \\($service in @\\(\"auth-service\",\"cart-service\",\"order-service\",\"payment-service\"\\)\\) { Copy-Item \"C:\\\\Users\\\\Julian\\\\VSCode\\\\WFP2\\\\product-service\\\\latency.py\" \"C:\\\\Users\\\\Julian\\\\VSCode\\\\WFP2\\\\$service\\\\latency.py\" })",
+      "Read(//mnt/c/Users/Julian/VSCode/**)",
+      "Bash(python scripts/experiment.py --quick)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Julian\\VSCode\\WFP2$service"
